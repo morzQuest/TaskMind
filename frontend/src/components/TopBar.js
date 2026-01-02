@@ -78,16 +78,6 @@ function TopBar({
             />{" "}
             First: Yellow
           </label>
-          <label>
-            <input
-              type="radio"
-              name="mode"
-              value="Second: Orange"
-              checked={taskMode === "Second: Orange"}
-              onChange={() => setTaskMode("Second: Orange")}
-            />{" "}
-            Second: Orange
-          </label>
         </div>
 
         {/* Question Toggle */}

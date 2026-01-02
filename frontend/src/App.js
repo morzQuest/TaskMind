@@ -24,7 +24,7 @@ function App() {
   const [taskOrder, setTaskOrder] = useState("");
   const [showTaskPopup, setShowTaskPopup] = useState(false);
   const [currentTask, setCurrentTask] = useState(null);
-  const [userAnswer, setUserAnswer] = useState("");
+  const [userAnswer, setUserAnswer] = useState(null); // "even" | "odd" | null
   const [applied, setApplied] = useState(false);
   const [startPressed, setStartPressed] = useState(false);
   const [robotPaused, setRobotPaused] = useState(false);
@@ -62,43 +62,18 @@ function App() {
     return stored === "true"; // default to false if not found
   });
 
-  const secondaryTasks = useMemo(() => [
-    { question: "12 + 7 - 5= ?", answer: "14" },
-    { question: "15 × 3 = ?", answer: "45" },
-    { question: "72 ÷ 8 = ?", answer: "9" },
-    { question: "√81 = ?", answer: "9" },
-    { question: "14 + 28 + 2 = ?", answer: "44" },
-    { question: "5 × 25 = ?", answer: "125" },
-    { question: "12 × 4 = ?", answer: "48" },
-    { question: "72 ÷ 9 = ?", answer: "8" },
-    { question: "125 ÷ 5 = ?", answer: "25" },
-    { question: "35 + 12 - 7= ?", answer: "40" },
-    { question: "46 + 7 - 5= ?", answer: "48" },
-    { question: "√49 = ?", answer: "7" },
-    { question: "17 × 3 = ?", answer: "51" },
-    { question: "15 + 74 - 3 = ?", answer: "86" },
-    { question: "18 × 6 = ?", answer: "108" },
-    { question: "64 ÷ 8 = ?", answer: "8" },
-    { question: "48 ÷ 12 = ?", answer: "4" },
-    { question: "23 + 17 - 5 = ?", answer: "35" },
-    { question: "52 + 19 - 8 = ?", answer: "63" },
-    { question: "√81 = ?", answer: "9" },
-    { question: "29 × 4 = ?", answer: "116" },
-    { question: "36 ÷ 6 = ?", answer: "6" },
-    { question: "14 × 7 = ?", answer: "98" },
-    { question: "88 - 45 + 12 = ?", answer: "55" },
-    { question: "95 - 36 + 7 = ?", answer: "66" },
-    { question: "√100 = ?", answer: "10" },
-    { question: "27 × 5 = ?", answer: "135" },
-    { question: "56 ÷ 7 = ?", answer: "8" },
-    { question: "12 × 12 = ?", answer: "144" },
-    { question: "42 + 18 - 20 = ?", answer: "40" },
-    { question: "63 ÷ 3 = ?", answer: "21" },
-    { question: "16 × 9 = ?", answer: "144" },
-    { question: "√49 = ?", answer: "7" },
-    { question: "25 + 36 - 14 = ?", answer: "47" },
+ const secondaryTasks = useMemo(() => {
+    const numbers = [
+      -33, 14, 48, -12, 7, -64, 45, -8, 125, 40,
+      -45, 86, 9, -25, 108, -40, 35, -7, 63, -86,
+      116, -63, 98, -98, 55, -55, 8, 25, 144, 44,
+    ];
 
-  ], []);
+    return numbers.map((n) => ({
+      number: n,
+      correctAnswer: n % 2 === 0 ? "even" : "odd",
+    }));
+  }, []);
 
   const logEvent = useCallback(async (event, details = {}) => {
     if (!participantId) return;
@@ -530,8 +505,9 @@ function App() {
     console.log("showQuestion called - showing popup");
     const randomTask = secondaryTasks[Math.floor(Math.random() * secondaryTasks.length)];
     setCurrentTask(randomTask);
-    setUserAnswer("");
+    setUserAnswer(null);
     setShowTaskPopup(true);
+
     playBeep();
     logEvent("Question Popup Shown", { question: randomTask.question });
   }, [logEvent, secondaryTasks, playBeep]);
@@ -725,6 +701,41 @@ function App() {
       alert("❌ Incorrect! Try again.");
     }
   };
+
+const handleParityAnswer = useCallback(
+  (selected) => {
+    if (!currentTask) return;
+    setUserAnswer (selected);
+
+    const isCorrect = selected === currentTask.correctAnswer;
+
+    if (isCorrect) {
+      logEvent("Question Answered", {
+        number: currentTask.number,
+        answer: selected,
+        correctAnswer: currentTask.correctAnswer,
+        isCorrect: true,
+      });
+
+      setShowTaskPopup(false);
+
+      if (taskOrder === "Question" && robotStarted) {
+        startQuestionTimer();
+      }
+    } else {
+      logEvent("Question Wrong Answer", {
+        number: currentTask.number,
+        answer: selected,
+        correctAnswer: currentTask.correctAnswer,
+        isCorrect: false,
+      });
+
+              alert("❌ Incorrect! Try again.");
+
+    }
+  },
+      [currentTask, logEvent, robotStarted, startQuestionTimer, taskOrder]
+);
 
 
 
@@ -968,7 +979,7 @@ function App() {
           <div className="bottom-panel">
             <div className="instruction-content">
               <HumanInstruction
-                instruction={robotStarted ? currentInstruction?.description : "Here i show you the instruction for each step"}
+                instruction={robotStarted ? currentInstruction?.description : "Here I show you the instruction for each step"}
                 image={robotStarted ? currentInstruction?.image : "/final.png"}
                 nextStep={nextHumanTask}
                 prevStep={prevHumanTask}
@@ -1034,14 +1045,13 @@ function App() {
           <>
             <div className="question-popup-overlay"></div>
             <div className="question-popup">
-              <h3>{currentTask.question}</h3>
-              <input
-                type="text"
-                value={userAnswer}
-                onChange={(e) => setUserAnswer(e.target.value)}
-                placeholder="Your answer"
-              />
-              <button onClick={handleAnswerSubmit}>Submit</button>
+              <h3>{currentTask.number}</h3>
+
+                          {/* Choose even or odd: */}
+            <div className="parity-buttons">
+              <button onClick={() => handleParityAnswer("even")}>Even</button>
+              <button onClick={() => handleParityAnswer("odd")}>Odd</button>
+            </div>
             </div>
           </>
         )}

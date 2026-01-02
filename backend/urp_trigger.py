@@ -2,7 +2,7 @@ import socket
 import time
 import math
 
-ROBOT_IP = "192.168.1.15"  # Robot IP address
+ROBOT_IP = "192.168.1.10"  # Robot IP address
 DASHBOARD_PORT = 29999
 CONTROL_PORT = 30002  # Port for sending joint positions
 
@@ -288,7 +288,7 @@ def trigger_urp_program(urp_name, orange_mode=False):
         time.sleep(1.0)  # Wait longer for forced stop
 
     # Determine folder and URP name
-    folder = "Zahra/Orange" if orange_mode else "Zahra"
+    folder = "Mursal/Orange" if orange_mode else "Mursal"
     program_name = f"orange_{urp_name}" if orange_mode else urp_name
     file_path = f"{folder}/{program_name}.urp"
 
