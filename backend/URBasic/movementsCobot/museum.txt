@@ -1,0 +1,12 @@
+ Program
+   Robot Program
+     MoveL
+       InitialPosition
+       Waypoint_1
+       Waypoint_2
+       Waypoint_3
+       Gripper Close (1)
+       Waypoint_4
+       Waypoint_5
+       Waypoint_6
+       Gripper Open (1)

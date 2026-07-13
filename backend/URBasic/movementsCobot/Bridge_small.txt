@@ -1,0 +1,20 @@
+ Program
+   Robot Program
+     MoveL
+       Init
+       Waypoint_8
+       Waypoint_2
+       Waypoint_3
+       Gripper Close (1)
+       Waypoint_2
+       Waypoint_7
+       MoveJ
+         Waypoint_4
+       MoveL
+         Waypoint_1
+       MoveJ
+         Waypoint_5
+         Waypoint_6
+         Gripper Open (1)
+         Waypoint_4
+         Init

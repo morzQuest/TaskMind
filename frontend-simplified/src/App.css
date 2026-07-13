@@ -71,12 +71,12 @@
 }
 
 .robot-communicator-column {
-  flex: 1;
   background-color: #f9f9f9;
   border-left: 0.1vw solid #ddd;
   display: flex;
   flex-direction: column;
   position: relative;
+  max-width: 280px;
 }
 .robot-controls {
   margin-top: 0.1vw;

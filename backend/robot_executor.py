@@ -25,6 +25,9 @@ class RobotExecutor:
         self.task_times = {}  # Cache for Time_Robot values
         self.execution_message = "Robot idle."  # Track execution-specific messages
         self.pause_reset_flag = False  # Flag to reset pause waiting time
+        self.dependency_check_interval = 0.5
+        self.state_check_interval = 0.2
+        self.pause_transition_delay = 0.2
 
 
     def reset(self):
@@ -205,7 +208,7 @@ class RobotExecutor:
                 self.is_running = False
                 self.last_activity_time = time.time()
 
-            time.sleep(0.1)
+            time.sleep(0.05)
 
     def check_and_wait_for_dependencies(self, urp_name):
         """Check dependencies and wait if not met"""
@@ -234,13 +237,13 @@ class RobotExecutor:
                         self.robot_message = data.get('message', 'Waiting for dependencies')
                         print(f"⏳ Waiting for dependencies: {self.robot_message}")
                         print(f"🔍 Debug: Robot message set to: '{self.robot_message}'")
-                        time.sleep(2)  # Wait before checking again
+                        time.sleep(self.dependency_check_interval)
                 else:
                     print(f"❌ Error checking dependencies: {response.status_code}")
-                    time.sleep(2)
+                    time.sleep(self.dependency_check_interval)
             except Exception as e:
                 print(f"❌ Error checking dependencies: {e}")
-                time.sleep(2)
+                time.sleep(self.dependency_check_interval)
 
     def execute_task(self, urp_name):
         """Execute a URP program and monitor its completion"""
@@ -275,7 +278,7 @@ class RobotExecutor:
         execution_start_time = time.time()
         pause_start_time = None  # Track when pause started
         max_wait_time = self.get_task_time(urp_name)  # Get dynamic wait time from Excel
-        check_interval = 0.5   # Check robot state every 0.5 seconds
+        check_interval = self.state_check_interval
         was_paused = False  # Track if task was paused during execution
         
         while time.time() - execution_start_time < max_wait_time:
@@ -299,8 +302,8 @@ class RobotExecutor:
                     last_pause_check = time.time()
                     
                     while not self.started:
-                        time.sleep(0.5)
-                        
+                        time.sleep(self.state_check_interval)
+
                         # Check if pause reset flag is set (page refresh)
                         if self.pause_reset_flag:
                             print(f"🔄 Pause waiting time reset due to page refresh for task '{urp_name}'")
@@ -322,7 +325,7 @@ class RobotExecutor:
                         
                         # Give the robot a moment to transition from paused to running state
                         print(f"⏳ Waiting for robot to transition to running state...")
-                        time.sleep(1)  # Wait 1 second for state transition
+                        time.sleep(self.pause_transition_delay)
                     else:
                         print(f"▶️ Task '{urp_name}' execution resumed")
                 

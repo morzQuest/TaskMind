@@ -29,6 +29,7 @@ __license__ = "MIT License"
 import URBasic
 import numpy as np
 import time
+import socket
 
 class UrScript(object):
     '''
@@ -269,7 +270,7 @@ end
 
         
         return movestr
- 
+
     def force_mode(self, task_frame=[0.,0.,0., 0.,0.,0.], selection_vector=[0,0,1,0,0,0], wrench=[0.,0.,0., 0.,0.,0.], f_type=2, limits=[2, 2, 1.5, 1, 1, 1], wait=False, timeout=60):
         '''
         Set robot to be controlled in force mode

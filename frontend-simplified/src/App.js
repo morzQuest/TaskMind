@@ -854,21 +854,21 @@ function App() {
             <div className="robot-communicator-column">
               <RobotCommunicator message={robotMessage} robotExecutionMessage={robotExecutionMessage} />
               <div className="robot-controls">
-                <div
+                <button
                   className={`toggle-option ${robotPaused ? "" : "active"} ${areAllTasksFinished ? "disabled" : ""}`}
                   onClick={() => {
                     if (!areAllTasksFinished && robotStarted) handleResume();
                   }}
                 >
                   Resume robot
-                </div>
-                <div
+                </button>
+                <button
                   className={`toggle-option ${robotPaused ? "active" : ""}`}
                   onClick={() => handlePause()}
                 >
                   Pause robot
-                </div>
-                <div
+                </button>
+                <button
                   className={`toggle-option ${isInitializingRobot ? "initializing" : ""}`}
                   onClick={() => handleInitializeRobot()}
                   style={{
@@ -878,7 +878,7 @@ function App() {
                   }}
                 >
                   Initialize robot
-                </div>
+                </button>
               </div>
             </div>
           </div>

@@ -19,12 +19,40 @@ function App() {
   const [robotStarted, setRobotStarted] = useState(false);
   const [allocationTime, setAllocationTime] = useState(null);
   const [startTime, setStartTime] = useState(null);
-  const [participantId, setParticipantId] = useState(null);
+  const [participantId, setParticipantId] = useState("");
+  const [participantIdError, setParticipantIdError] = useState("");
   const [taskMode, setTaskMode] = useState("");
   const [taskOrder, setTaskOrder] = useState("");
   const [showTaskPopup, setShowTaskPopup] = useState(false);
   const [currentTask, setCurrentTask] = useState(null);
   const [userAnswer, setUserAnswer] = useState(null); // "even" | "odd" | null
+  const [popupSecondsLeft, setPopupSecondsLeft] = useState(10);
+  const popupTimerRef = useRef(null);
+  const [showSavePopup, setShowSavePopup] = useState(false);
+  const [savePopupMessage, setSavePopupMessage] = useState("");
+  const [savePopupSensorTapped, setSavePopupSensorTapped] = useState(false);
+  const [sensorTapped, setSensorTapped] = useState(false);
+  const [scenario, setScenario] = useState("");
+  const [resolvedParticipantId, setResolvedParticipantId] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState(() => {
+    const stored = localStorage.getItem("elapsedSeconds");
+    return stored ? Number(stored) : 0;
+  });
+  const [score, setScore] = useState(() => {
+    const stored = localStorage.getItem("score");
+    return stored ? Number(stored) : 200;
+  });
+  const [trainingRoundsCompleted, setTrainingRoundsCompleted] = useState(() => {
+    const stored = localStorage.getItem("trainingRoundsCompleted");
+    return stored ? Number(stored) : 0;
+  });
+  const [lastAppliedParticipantId, setLastAppliedParticipantId] = useState(() => {
+    return localStorage.getItem("lastAppliedParticipantId") || "";
+  });
+  const [showScenarioPopup, setShowScenarioPopup] = useState(false);
+  const [scenarioPopupMessage, setScenarioPopupMessage] = useState("");
+  const timerRef = useRef(null);
+
   const [applied, setApplied] = useState(false);
   const [startPressed, setStartPressed] = useState(false);
   const [robotPaused, setRobotPaused] = useState(false);
@@ -69,16 +97,42 @@ function App() {
       116, -63, 98, -98, 55, -55, 8, 25, 144, 44,
     ];
 
-    return numbers.map((n) => ({
+    const numberTasks = numbers.map((n) => ({
+      type: "number",
       number: n,
+      displayText: `Number ${n} is:`,
       correctAnswer: n % 2 === 0 ? "even" : "odd",
     }));
+
+    const calcOperands = [
+      2, 5, 7, 9, 11, 13, 15, 4, 6, 8,
+      10, 12, 14, 16, 18, 3, 1, 17, 19, 20,
+      5, 7, 9, 11, 13, 4, 6, 8, 10, 12,
+    ];
+
+    const calcTasks = calcOperands.map((left, idx) => {
+      const right = calcOperands[(idx + 3) % calcOperands.length];
+      const op = idx % 2 === 0 ? "+" : "-";
+      const result = op === "+" ? left + right : left - right;
+      return {
+        type: "calc",
+        left,
+        right,
+        op,
+        expression: `${left} ${op} ${right}`,
+        displayText: `Result of ${left} ${op} ${right} is:`,
+        correctAnswer: result % 2 === 0 ? "even" : "odd",
+      };
+    });
+
+    return { numberTasks, calcTasks };
   }, []);
 
   const logEvent = useCallback(async (event, details = {}) => {
-    if (!participantId) return;
+    const effectiveId = resolvedParticipantId || participantId;
+    if (!effectiveId) return;
     const payload = {
-      participantId,
+      participantId: effectiveId,
       event,
       details
     };
@@ -87,7 +141,7 @@ function App() {
     } catch (error) {
       console.error("Failed to log event:", error);
     }
-  }, [participantId]);
+  }, [participantId, resolvedParticipantId]);
 
 
 
@@ -159,7 +213,6 @@ function App() {
     }
   };
 
-
   const handleTaskOrderChange = (newOrder, blockOrder) => {
     setCurrentTaskOrder(newOrder);
     setCurrentBlockOrder(blockOrder);
@@ -213,26 +266,55 @@ function App() {
     localStorage.setItem("saveEnabled", newState);
 
     if (newState) {
-      const newId = await fetchNextParticipantId();
-      setParticipantId(newId);
+      setParticipantId("");
       setAllocationTime(Date.now());
+      setParticipantIdError("Participant ID is required.");
     } else {
-      setParticipantId(null);
+      setParticipantId("");
       setAllocationTime(null);
+      setParticipantIdError("");
     }
   };
 
 
-  const fetchNextParticipantId = async () => {
-    try {
-      const res = await axios.get("http://127.0.0.1:8000/participant-count");
-      return `P${res.data.count + 1}`;
-    } catch (err) {
-      console.error("Failed to get participant count. Defaulting to P1");
-      return "P1";
+  useEffect(() => {
+    if (!saveEnabled) return;
+    if (participantId.trim() === "") {
+      setParticipantIdError("Participant ID is required.");
+    } else if (!scenario) {
+      setParticipantIdError("Scenario is required.");
+    } else {
+      setParticipantIdError("");
     }
-  };
+  }, [participantId, saveEnabled, scenario]);
 
+  useEffect(() => {
+    if (!participantId || !scenario) {
+      setResolvedParticipantId("");
+      return;
+    }
+
+    if (scenario === "T") {
+      axios.post("http://127.0.0.1:8000/resolve-participant-id", {
+        participantId,
+        scenario
+      })
+      .then((res) => {
+        setResolvedParticipantId(res.data.participantId || "");
+      })
+      .catch(() => {
+        setResolvedParticipantId("");
+      });
+      return;
+    }
+
+    if (scenario === "M" || scenario === "MM" || scenario === "F") {
+      setResolvedParticipantId(`${participantId}${scenario}`);
+      return;
+    }
+
+    setResolvedParticipantId(participantId);
+  }, [participantId, scenario]);
 
   const humanTasks = tasks.filter((t) => t.assignedTo === "Human");
   const isLast = currentHumanStep === humanTasks.length - 1;
@@ -304,7 +386,8 @@ function App() {
             .then((res) => res.json())
             .then((robotDependencyData) => {
               console.log("🔍 Robot dependency data:", robotDependencyData);
-              
+              const hasRobotTasks = tasks.some(task => task.assignedTo === "Robot");
+
               // Prioritize robot dependency messages over human dependency messages
               if (!robotDependencyData.allowed && robotDependencyData.message) {
                 const newMessage = `🤖 ${robotDependencyData.message}`;
@@ -315,6 +398,11 @@ function App() {
                 const newMessage = `⚠️ ${humanDependencyData.message}`;
                 if (newMessage !== robotMessage) {
                   setRobotMessage(newMessage);
+                }
+              } else if (!hasRobotTasks) {
+                const noTaskMessage = "🎉 All robot tasks finished!";
+                if (robotMessage !== noTaskMessage) {
+                  setRobotMessage(noTaskMessage);
                 }
               } else {
                 // All dependencies are met - show success message
@@ -334,7 +422,7 @@ function App() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [robotStarted, robotMessage]);
+  }, [robotStarted, robotMessage, tasks]);
 
 
 
@@ -430,7 +518,7 @@ function App() {
     setApplied(false);
     setAllocationTime(null);
     setStartTime(null);
-    setParticipantId(null);
+    setParticipantId("");
     setTaskMode("");
     setTaskOrder("");
     
@@ -474,42 +562,43 @@ function App() {
   }, []); // Empty dependency array - only run once on mount
 
   const questionTimeoutRef = useRef(null);
-  const QUESTION_INTERVAL_MS = 20 * 1000; // 20 seconds
+  const QUESTION_INTERVAL_MS = 30 * 1000; // 30 seconds
 
   // Play a short beep when the question popup appears
   const playBeep = useCallback(() => {
     try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      const audioCtx = new AudioContextClass();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
-      gainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.2, audioCtx.currentTime + 0.01);
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2); // ~200ms beep
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.22);
-      oscillator.onended = () => {
-        try { audioCtx.close(); } catch (e) { /* noop */ }
-      };
+        const audio = new Audio('/beep.mp3');
+        audio.play();
     } catch (e) {
       // Silently ignore if audio is blocked
       console.warn('Beep sound could not be played:', e);
     }
   }, []);
 
+  useEffect(() => {
+    if (showSavePopup) {
+      setSavePopupSensorTapped(false);
+      playBeep();
+    }
+  }, [showSavePopup, playBeep]);
+
+  useEffect(() => {
+    if (showScenarioPopup) {
+      playBeep();
+    }
+  }, [showScenarioPopup, playBeep]);
+
   const showQuestion = useCallback(() => {
     console.log("showQuestion called - showing popup");
-    const randomTask = secondaryTasks[Math.floor(Math.random() * secondaryTasks.length)];
+    const useCalc = Math.random() < 0.5;
+    const source = useCalc ? secondaryTasks.calcTasks : secondaryTasks.numberTasks;
+    const randomTask = source[Math.floor(Math.random() * source.length)];
     setCurrentTask(randomTask);
     setUserAnswer(null);
     setShowTaskPopup(true);
 
     playBeep();
-    logEvent("Question Popup Shown", { question: randomTask.question });
+    logEvent("Question Popup Shown", { question: randomTask.displayText, type: randomTask.type });
   }, [logEvent, secondaryTasks, playBeep]);
 
 
@@ -517,7 +606,6 @@ function App() {
   const isEditable = !robotStarted;
 
   const updateTaskRole = (taskId, assignedTo, sliderValue = 5) => {
-    logEvent("Task Allocation Changed", { taskId, assignedTo, sliderValue });
 
     // If the interface is not editable, return
     if (!isEditable) return;
@@ -536,17 +624,6 @@ function App() {
     setTasks(updatedTasks);
   };
 
-
-  useEffect(() => {
-    const initializeSaveState = async () => {
-      if (saveEnabled && !participantId) {
-        const newId = await fetchNextParticipantId();
-        setParticipantId(newId);
-        setAllocationTime(Date.now());
-      }
-    };
-    initializeSaveState();
-  }, [saveEnabled, participantId, fetchNextParticipantId]);
 
 
   useEffect(() => {
@@ -634,40 +711,61 @@ function App() {
 
 
   const startRobot = () => {
+    const effectiveId = resolvedParticipantId || participantId;
+    if (!effectiveId) {
+      alert("Please enter a Participant ID and select a scenario before starting.");
+      return;
+    }
+    if (!sensorTapped) {
+      alert("Please confirm 'Sensor tapped' before starting.");
+      return;
+    }
     logEvent("Start Button Pressed");
+
+    // Show scenario popup for M, MM, F - defer actual start until popup closes
+    if (scenario === "M" || scenario === "MM" || scenario === "F") {
+      const messageMap = {
+          M: "Accepted ✅ Your allocation will be used.",
+          MM: "Rejected ❌ Your allocation preferences were **not** taken into account. The system selected a (random) different allocation.",
+          F: "The system chose a better optimized solution for you. Let's see how many points you can collect!"
+      };
+      setScenarioPopupMessage(messageMap[scenario] || "");
+      setShowScenarioPopup(true);
+      return;
+    }
+
+    // For T scenario, start immediately
+    actuallyStartRobot();
+  };
+
+  const actuallyStartRobot = () => {
     setRobotFinished(false); // reset flag for resume button
     setStartPressed(true);
     if (!isRobotRunning) {
+      const shouldScore = scenario !== "T";
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+        if (shouldScore) {
+          setScore((prev) => prev - 1);
+        }
+      }, 1000);
+
       const now = Date.now();
       setStartTime(now);
+      if (saveEnabled && !allocationTime) {
+        setAllocationTime(now);
+      }
+      const tasksToStart = applyScenarioToTasks(tasks);
+      setTasks(tasksToStart);
       setIsRobotRunning(true);
       setRobotStarted(true);
 
-      // Save participant task order if in yellow mode
-      if (taskMode === "First: Yellow") {
-        // Use currentBlockOrder if available, otherwise fall back to tasks
-        const orderToSave = currentBlockOrder.length > 0 ? currentBlockOrder : tasks;
-        
-        // Log the exact block order being saved
-        console.log("🔍 Saving block order for participant:", participantId);
-        console.log("🔍 Current block order state:", currentBlockOrder.map(b => b.name));
-        console.log("🔍 Block order being saved:", orderToSave.map(b => b.name || b.name));
-        
-        axios.post("http://127.0.0.1:8000/save-participant-order", {
-          participantId: participantId,
-          blockOrder: orderToSave,
-          taskMode: taskMode
-        })
-        .then((res) => {
-          console.log("✅ Participant block order saved:", res.data);
-        })
-        .catch((err) => {
-          console.error("❌ Failed to save participant block order:", err);
-        });
-      }
 
       // Start execution with current task assignments
-      axios.post("http://127.0.0.1:8000/start-execution", tasks)
+      axios.post("http://127.0.0.1:8000/start-execution", tasksToStart)
         .then((res) => {
           console.log("✅ Execution started:", res.data);
         })
@@ -676,7 +774,7 @@ function App() {
         });
       
       // Send tasks to backend to start execution
-      axios.post("http://127.0.0.1:8000/robot/start", { tasks })
+      axios.post("http://127.0.0.1:8000/robot/start", { tasks: tasksToStart })
         .then(() => console.log("Robot tasks queued on backend"))
         .catch((err) => console.error("Failed to start robot tasks:", err));
 
@@ -687,8 +785,14 @@ function App() {
     }
   };
 
+  const closeScenarioPopup = () => {
+    setShowScenarioPopup(false);
+    actuallyStartRobot();
+  };
+
   const handleAnswerSubmit = () => {
     if (userAnswer.trim() === currentTask.answer) {
+      setScore((prev) => prev + 10);
       logEvent("Question Answered", { question: currentTask.question, answer: userAnswer });
       setShowTaskPopup(false);
 
@@ -710,6 +814,10 @@ const handleParityAnswer = useCallback(
     const isCorrect = selected === currentTask.correctAnswer;
 
     if (isCorrect) {
+      // Only add points outside Training scenario
+      if (scenario !== "T") {
+        setScore((prev) => prev + 10);
+      }
       logEvent("Question Answered", {
         number: currentTask.number,
         answer: selected,
@@ -730,11 +838,11 @@ const handleParityAnswer = useCallback(
         isCorrect: false,
       });
 
-              alert("❌ Incorrect! Try again.");
+      alert("❌ Incorrect! Try again.");
 
     }
   },
-      [currentTask, logEvent, robotStarted, startQuestionTimer, taskOrder]
+      [currentTask, logEvent, robotStarted, startQuestionTimer, taskOrder, scenario]
 );
 
 
@@ -745,7 +853,9 @@ const handleParityAnswer = useCallback(
 
   const nextHumanTask = async() => {
     const currentTask = humanTasks[currentHumanStep];
-    
+    const currentTaskName = currentTask?.name || "";
+    const isInspectionTask = currentTaskName.toLowerCase().includes("inspection");
+
     // Check dependencies before allowing task completion
     if (currentTaskBlocked) {
       console.log("Task is blocked by dependencies, cannot proceed");
@@ -757,6 +867,14 @@ const handleParityAnswer = useCallback(
       await axios.post(`http://127.0.0.1:8000/complete-human-task?task_name=${currentTask.name}`);
     } catch (error) {
       console.error("Failed to complete human task:", error);
+    }
+
+    if (isInspectionTask && (scenario === "M" || scenario === "MM" || scenario === "F")) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      logEvent("Inspection Finished", { elapsedSeconds, score });
     }
 
     // Clear blocked state when successfully proceeding
@@ -786,8 +904,9 @@ const handleParityAnswer = useCallback(
       setFinished(true);
       logEvent("Finish Button Pressed", { taskId: `Task_${currentTask.id}` });
 
-      // Stop question popup timer
-      stopQuestionTimer();
+      if (scenario === "T") {
+        setTrainingRoundsCompleted((prev) => prev + 1);
+      }
 
       // Set currentHumanStep to the last task to keep it green
       setCurrentHumanStep(humanTasks.length - 1);
@@ -795,10 +914,10 @@ const handleParityAnswer = useCallback(
       // Only send save if toggle is active
       if (saveEnabled && participantId && startTime && allocationTime) {
         const payload = {
-          participantId: participantId,
+          participantId: resolvedParticipantId || participantId,
           allocationTime: allocationTime,
           startTime: startTime,
-          finishTime: finish, // Use the current finish time, not the state variable
+          finishTime: finish,
           tasks: tasks.map(task => ({
             taskName: task.name,
             allocationValue: task.sliderValue ?? 5
@@ -809,14 +928,22 @@ const handleParityAnswer = useCallback(
         axios.post("http://127.0.0.1:8000/save", payload)
           .then((res) => {
             console.log("✅ Data saved:", res.data);
-            alert(`Saved data for ${res.data.participantId}`);
+            setSavePopupMessage(`Saved data for ${res.data.participantId}`);
+            setShowSavePopup(true);
           })
           .catch((err) => {
             console.error("❌ Failed to save data:", err);
             console.error("🔍 Debug: Error response:", err.response?.data);
             alert("Error saving data.");
           });
-      } 
+      } else {
+        const missing = [];
+        if (!saveEnabled) missing.push("Save Mode disabled");
+        if (!participantId) missing.push("Participant ID missing");
+        if (!startTime) missing.push("Start time missing");
+        if (!allocationTime) missing.push("Allocation time missing");
+        alert(`Save skipped: ${missing.join(", ")}`);
+      }
     }
   };
 
@@ -872,6 +999,14 @@ const handleParityAnswer = useCallback(
 
   const handleApplyToggles = async () => {
     logEvent("Apply Button Pressed", { taskMode, taskOrder });
+
+    if (participantId && participantId !== lastAppliedParticipantId) {
+      // New participant: reset timer/score/training counts
+      setElapsedSeconds(0);
+      setScore(200);
+      setTrainingRoundsCompleted(0);
+      setLastAppliedParticipantId(participantId);
+    }
 
         // Set robot mode based on color selection
     if (taskMode === "Second: Orange") {
@@ -944,6 +1079,87 @@ const handleParityAnswer = useCallback(
     }
   };
 
+  // Switch all allocations between Human and Robot for switchable tasks
+  const handleSwitchAllAllocations = () => {
+    const updatedTasks = tasks.map(task => {
+      if (task.fixedToHuman) return task; // Do not switch fixed tasks
+      if (task.assignedTo === "Human") return { ...task, assignedTo: "Robot" };
+      if (task.assignedTo === "Robot") return { ...task, assignedTo: "Human" };
+      // If unassigned, default to Human
+      return { ...task, assignedTo: "Human" };
+    });
+    setTasks(updatedTasks);
+    logEvent && logEvent("Switch All Allocations Button Pressed");
+  };
+
+  // Apply scenario-specific allocations right before Start
+  const applyScenarioToTasks = (inputTasks) => {
+    if (scenario === "MM") {
+      return inputTasks.map(task => {
+        if (task.fixedToHuman) return task;
+        if (task.assignedTo === "Human") return { ...task, assignedTo: "Robot" };
+        if (task.assignedTo === "Robot") return { ...task, assignedTo: "Human" };
+        return { ...task, assignedTo: "Human" };
+      });
+    }
+
+    if (scenario === "F") {
+      const fixedAllocations = {
+        "Museum": 10,
+        "Triangle": 10,
+        "Wheel_holder": 0,
+        "Wheel_holder_screws": 0,
+        "Wheel": 0,
+        "Wheel_screws": 0,
+        "Bridge_triangle_roof": 10,
+        "Bridge_flat_roof": 10,
+        "Bridge rod placement": 0,
+        "Snap_buttom": 0,
+        "Snap_middle": 0,
+        "Snap_top": 0,
+        "Hospital_base": 10,
+        "Hospital_big_top": 10,
+        "Hospital_small_top": 0,
+        "Hospital_screws": 0,
+        "Dovetail_buttom": 10,
+        "Dovetail_top": 10
+      };
+
+      return inputTasks.map(task => {
+        if (!(task.name in fixedAllocations)) return task;
+        const sliderValue = fixedAllocations[task.name];
+        const assignedTo = sliderValue > 5 ? "Robot" : "Human";
+        return { ...task, sliderValue, assignedTo };
+      });
+    }
+
+    return inputTasks;
+  };
+/*
+  useEffect(() => {
+    if (scenario !== "F") return;
+    const updatedTasks = applyScenarioToTasks(tasks);
+    const changed = updatedTasks.length !== tasks.length || updatedTasks.some((task, index) => {
+      const current = tasks[index];
+      return !current || task.assignedTo !== current.assignedTo || task.sliderValue !== current.sliderValue;
+    });
+    if (changed) {
+      setTasks(updatedTasks);
+    }
+  }, [scenario, tasks]);
+*/
+  useEffect(() => {
+    if (showSavePopup) {
+      setSavePopupSensorTapped(false);
+      playBeep();
+    }
+  }, [showSavePopup, playBeep]);
+
+  useEffect(() => {
+    if (showScenarioPopup) {
+      playBeep();
+    }
+  }, [showScenarioPopup, playBeep]);
 
   return (
     <div className="container">      
@@ -954,6 +1170,8 @@ const handleParityAnswer = useCallback(
           <div className="top-left-panel" style={{ height: "300px", overflow: "auto" }}>
             <TopBar
               participantId={participantId}
+              setParticipantId={setParticipantId}
+              participantIdError={participantIdError}
               saveEnabled={saveEnabled}
               handleSaveToggle={handleSaveToggle}
               taskMode={taskMode}
@@ -966,6 +1184,12 @@ const handleParityAnswer = useCallback(
               startRobot={startRobot}
               startPressed={startPressed}
               robotInitialized={robotInitialized}
+              sensorTapped={sensorTapped}
+              setSensorTapped={setSensorTapped}
+              scenario={scenario}
+              setScenario={setScenario}
+              resolvedParticipantId={resolvedParticipantId}
+              score={score}
             />
             <GraphicalTaskSequence
               tasks={tasks}
@@ -993,26 +1217,28 @@ const handleParityAnswer = useCallback(
                 blockedMessage={blockedTaskMessage}
                 robotInitialized={robotInitialized}
                 startPressed={startPressed}
+                elapsedSeconds={elapsedSeconds}
               />
             </div>
+
             <div className="robot-communicator-column">
               <RobotCommunicator message={robotMessage} robotExecutionMessage={robotExecutionMessage} />
               <div className="robot-controls">
-                <div
+                <button
                   className={`toggle-option ${robotPaused ? "" : "active"} ${areAllTasksFinished ? "disabled" : ""}`}
                   onClick={() => {
                     if (!areAllTasksFinished && robotStarted) handleResume();
                   }}
                 >
                   Resume robot
-                </div>
-                <div
+                </button>
+                <button
                   className={`toggle-option ${robotPaused ? "active" : ""}`}
                   onClick={() => handlePause()}
                 >
                   Pause robot
-                </div>
-                <div
+                </button>
+                <button
                   className={`toggle-option ${isInitializingRobot ? "initializing" : ""}`}
                   onClick={() => handleInitializeRobot()}
                   style={{
@@ -1022,7 +1248,7 @@ const handleParityAnswer = useCallback(
                   }}
                 >
                   Initialize robot
-                </div>
+                </button>
               </div>
             </div>
           </div>
@@ -1037,21 +1263,100 @@ const handleParityAnswer = useCallback(
             robotStarted={robotStarted}
             onOrderChange={handleTaskOrderChange}
             savedBlockOrder={savedBlockOrder}
+            slidersLocked={scenario === "F" && !applied}
           />
-            
-
         </div>
         {showTaskPopup && currentTask && (
           <>
             <div className="question-popup-overlay"></div>
-            <div className="question-popup">
-              <h3>{currentTask.number}</h3>
-
+            <div className="question-popup" style={{
+                fontSize: "1.8vw",
+                width: "25%",
+                height: "12%",
+                outline: "3px solid #007bff",
+            }}>
+                {currentTask.displayText}
                           {/* Choose even or odd: */}
             <div className="parity-buttons">
-              <button onClick={() => handleParityAnswer("even")}>Even</button>
-              <button onClick={() => handleParityAnswer("odd")}>Odd</button>
+              <button onClick={() => handleParityAnswer("even")} style={{marginInlineEnd: "10px", fontSize: "1vw", marginTop: "10px"}}>Even</button>
+              <button onClick={() => handleParityAnswer("odd")} style={{fontSize: "1vw"}}>Odd</button>
             </div>
+                <span style={{fontSize:"1vw"}}>+10 points for each correct answer!</span>
+            </div>
+          </>
+        )}
+        {showScenarioPopup && (
+          <>
+            <div className="question-popup-overlay"></div>
+            <div className="question-popup">
+              <button
+                onClick={closeScenarioPopup}
+                style={{
+                  position: "absolute",
+                  top: "0.4vw",
+                  right: "0.4vw",
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5vw",
+                  cursor: "pointer",
+                  fontWeight: "bold"
+                }}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+              <p style={{ fontWeight: "bold", fontSize: "1.2vw", marginTop: "0.5vw" }}>{scenarioPopupMessage}</p>
+              <button
+                onClick={closeScenarioPopup}
+                style={{
+                  marginTop: "1vw",
+                  backgroundColor: "#007bff",
+                  color: "white",
+                  border: "none",
+                  padding: "0.5vw 1vw",
+                  borderRadius: "0.3vw",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                  fontSize: "1vw"
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </>
+        )}
+        {showSavePopup && (
+          <>
+            <div className="question-popup-overlay"></div>
+            <div className="question-popup">
+              <h3>✅ Data saved</h3>
+              <p>{savePopupMessage}</p>
+              <p style={{ fontWeight: "bold" }}>Score: {score}</p>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.2vw", fontWeight: "bold", marginTop: "0.6vw" }}>
+                <input
+                  type="checkbox"
+                  checked={savePopupSensorTapped}
+                  onChange={(e) => setSavePopupSensorTapped(e.target.checked)}
+                  style={{width: "25%"}}
+                />
+                Sensor Tapped
+              </label>
+              <button
+                onClick={() => setShowSavePopup(false)}
+                disabled={!savePopupSensorTapped}
+                style={{
+                  marginTop: "0.6vw",
+                  backgroundColor: savePopupSensorTapped ? "#007bff" : "gray",
+                  color: "white",
+                  border: "none",
+                  padding: "0.4vw 0.8vw",
+                  borderRadius: "0.3vw",
+                  cursor: savePopupSensorTapped ? "pointer" : "not-allowed",
+                  fontWeight: "bold"
+                }}
+              >
+                Close
+              </button>
             </div>
           </>
         )}

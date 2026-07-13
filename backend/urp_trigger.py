@@ -6,6 +6,9 @@ ROBOT_IP = "192.168.1.10"  # Robot IP address
 DASHBOARD_PORT = 29999
 CONTROL_PORT = 30002  # Port for sending joint positions
 
+# Set the base folder for URP programs to the robot's internal folder (relative to /programs/)
+URP_BASE_FOLDER = "/programs/Mursal"
+
 def send_dashboard_command(command):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -72,7 +75,7 @@ def send_joint_positions_improved(joint_positions):
                 f"movej([{joint_str}], a=0.5, v=0.3)\n",
                 f"movej([{joint_str}])\n"
             ]
-            
+
             for i, command in enumerate(commands_to_try):
                 print(f"🔧 Trying command {i+1}: {command.strip()}")
                 s.sendall(command.encode())
@@ -229,11 +232,11 @@ def activate_gripper():
         
         # Use threading with timeout to prevent freezing
         result = {"success": False, "error": None}
-        
+
         def gripper_operation():
             try:
                 import robotiq_gripper
-                
+
                 print("🤏 Creating gripper...")
                 gripper = robotiq_gripper.RobotiqGripper()
                 print("🤏 Connecting to gripper...")
@@ -266,7 +269,17 @@ def activate_gripper():
         print(f"❌ Failed to activate gripper: {e}")
         return False
 
-def trigger_urp_program(urp_name, orange_mode=False):
+def get_robot_mode():
+    """Query the robot's mode using the dashboard server."""
+    try:
+        response = send_dashboard_command("robotmode")
+        print(f"🔍 Debug: Robot mode response: {response}")
+        return response.strip().lower()
+    except Exception as e:
+        print(f"❌ Error querying robot mode: {e}")
+        return None
+
+def trigger_urp_program(urp_name, robot_ip, orange_mode=False):
     """
     Loads and runs a URP program from Zahra/ or Zahra/Orange/ depending on orange_mode.
     If orange_mode is True, it will prefix 'orange_' to the URP name.
@@ -288,8 +301,8 @@ def trigger_urp_program(urp_name, orange_mode=False):
         time.sleep(1.0)  # Wait longer for forced stop
 
     # Determine folder and URP name
-    folder = "Mursal/Orange" if orange_mode else "Mursal"
-    program_name = f"orange_{urp_name}" if orange_mode else urp_name
+    folder = URP_BASE_FOLDER
+    program_name = urp_name
     file_path = f"{folder}/{program_name}.urp"
 
     print(f"📁 Loading from: {file_path}")
@@ -314,12 +327,40 @@ def trigger_urp_program(urp_name, orange_mode=False):
         return False
 
     print(f"✅ Program loaded successfully")
-    time.sleep(0.8)  # Wait longer for program to load
-    
+    time.sleep(0.4)  # Wait longer for program to load
+
     # Check what program is actually loaded
     current_program = send_dashboard_command("get loaded program")
     print(f"🔍 Debug: Currently loaded program: {current_program}")
-    
+
+    # Check robot mode and program state before play
+    robot_mode = get_robot_mode()
+    program_state = send_dashboard_command("programState")
+    print(f"🔍 Robot mode before play: {robot_mode}")
+    print(f"🔍 Program state before play: {program_state}")
+
+    # Try to recover from common blocking states
+    if robot_mode is not None:
+        if "protective" in robot_mode or "emergency" in robot_mode:
+            print("⚠️ Robot in protective/emergency stop, sending unlock command...")
+            send_dashboard_command("unlock protective stop")
+            time.sleep(1.0)
+        elif "idle" in robot_mode or "power_off" in robot_mode:
+            print("⚠️ Robot in idle/power_off, sending power on and brake release...")
+            send_dashboard_command("power on")
+            time.sleep(1.0)
+            send_dashboard_command("brake release")
+            time.sleep(1.0)
+
+    # After recovery attempts, re-check mode
+    robot_mode = get_robot_mode()
+    print(f"🔍 Robot mode after recovery: {robot_mode}")
+
+    if robot_mode is None or "idle" in robot_mode or "protective" in robot_mode or "emergency" in robot_mode:
+        print(f"❌ Robot is not ready to execute programs. Current mode: {robot_mode}")
+        print("➡️ Please switch the robot to RUNNING/REMOTE CONTROL mode and clear any stops.")
+        return False
+
     # Start the program
     print("▶️ Starting program...")
     response = send_dashboard_command("play")

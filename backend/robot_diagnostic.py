@@ -51,7 +51,7 @@ def check_urp_files():
         
         for urp_name in urp_names:
             # Test both yellow and orange modes
-            for mode, folder in [("Yellow", "Zahra"), ("Orange", "Zahra/Orange")]:
+            for mode, folder in [("Yellow", "Mursal"), ("Orange", "Mursal/Orange")]:
                 program_name = f"orange_{urp_name}" if mode == "Orange" else urp_name
                 file_path = f"{folder}/{program_name}.urp"
                 

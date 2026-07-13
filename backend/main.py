@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
-from urp_trigger import send_dashboard_command
+from urp_trigger import send_dashboard_command, trigger_urp_program, ROBOT_IP
 from robot_executor import robot_executor
 from fastapi import Request
 from pydantic import BaseModel
@@ -12,6 +12,7 @@ import time
 import re
 from datetime import datetime
 from fastapi import Body
+import glob
 
 # Set to False when not connected to the robot (for dev/testing)
 ROBOT_CONNECTED = True
@@ -715,6 +716,7 @@ from openpyxl import Workbook, load_workbook
 from datetime import datetime
 from threading import Lock
 import re
+import ast
 
 # Global variables
 log_lock = Lock()
@@ -993,15 +995,15 @@ async def initialize_robot(request: Request):
         # Determine which position to use based on Task Step
         if task_mode == "Second: Orange":
             # Orange task - use orange position
-            joint_positions = [-269.66, -91.23, -90.28, -86.09, 92.69, 808.82]
+            joint_positions = [91.64, -87.58, -91.77, -90.54, 90.03, 139.40]
             task_type = "orange"
         elif task_mode == "First: Yellow":
             # Yellow task - use yellow position
-            joint_positions = [-79.98, -91.20, -87.97, -91.69, 84.67, 815.51]
+            joint_positions = [91.64, -87.58, -91.77, -90.54, 90.03, 139.40]
             task_type = "yellow"
         else:
             # Default to yellow position if no task mode specified
-            joint_positions = [-79.98, -91.20, -87.97, -91.69, 84.67, 815.51]
+            joint_positions = [91.64, -87.58, -91.77, -90.54, 90.03, 139.40]
             task_type = "default"
         
         # Send joint positions to robot using multiple methods
@@ -1048,3 +1050,82 @@ async def initialize_robot(request: Request):
     except Exception as e:
         print(f"❌ Initialize robot failed: {e}")
         return {"status": "error", "message": str(e)}
+
+@app.post("/resolve-participant-id")
+def resolve_participant_id(data: dict):
+    """Resolve participant ID with scenario suffix; T auto-increments using existing logs/data."""
+    participant_id = str(data.get("participantId", "")).strip()
+    scenario = str(data.get("scenario", "")).strip()
+
+    if not participant_id or not scenario:
+        return {"participantId": ""}
+
+    if scenario in {"M", "MM", "F"}:
+        return {"participantId": f"{participant_id}{scenario}"}
+
+    if scenario != "T":
+        return {"participantId": participant_id}
+
+    def collect_ids_from_file(filename: str):
+        if not os.path.exists(filename):
+            return []
+        try:
+            df = pd.read_excel(filename)
+            if "Participant ID" not in df.columns:
+                return []
+            return [str(v).strip() for v in df["Participant ID"].dropna().tolist()]
+        except Exception:
+            return []
+
+    existing_ids = []
+    for log_file in ["Log.xlsx"] + glob.glob("log_*.xlsx"):
+        existing_ids.extend(collect_ids_from_file(log_file))
+    existing_ids.extend(collect_ids_from_file("participant_data.xlsx"))
+
+    pattern = re.compile(rf"^{re.escape(participant_id)}T(\d+)$")
+    max_index = 0
+    for existing in existing_ids:
+        match = pattern.match(existing)
+        if match:
+            try:
+                max_index = max(max_index, int(match.group(1)))
+            except ValueError:
+                continue
+
+    next_index = max_index + 1
+    return {"participantId": f"{participant_id}T{next_index}"}
+
+@app.get("/last-score")
+def get_last_score(participantId: str):
+    if not participantId:
+        raise HTTPException(status_code=400, detail="participantId is required")
+
+    if not os.path.exists(LOG_FILE):
+        return {"score": None, "elapsedSeconds": None}
+
+    try:
+        wb = load_workbook(LOG_FILE)
+        ws = wb.active
+        # Walk from bottom to top to find last Inspection Finished for this participant
+        for row in range(ws.max_row, 1, -1):
+            pid = ws.cell(row=row, column=1).value
+            event = ws.cell(row=row, column=4).value
+            details_str = ws.cell(row=row, column=5).value
+            if pid != participantId:
+                continue
+            if event != "Inspection Finished":
+                continue
+            if not details_str:
+                break
+            try:
+                details = ast.literal_eval(details_str)
+                score = details.get("score")
+                elapsed = details.get("elapsedSeconds")
+                wb.close()
+                return {"score": score, "elapsedSeconds": elapsed}
+            except Exception:
+                break
+        wb.close()
+        return {"score": None, "elapsedSeconds": None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read log: {e}")

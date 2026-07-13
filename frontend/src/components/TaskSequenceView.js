@@ -17,7 +17,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import "./TaskSequenceView.css";
 
-function SortableTask({ task, updateTaskRole, editable, isLastTask }) {
+function SortableTask({ task, updateTaskRole, editable, isLastTask, slidersLocked }) {
   const getColorClass = () => {
     if (task.assignedTo === "Human") return "human";
     if (task.assignedTo === "Robot") return "robot";
@@ -30,7 +30,7 @@ function SortableTask({ task, updateTaskRole, editable, isLastTask }) {
   };
 
   const handleChange = (e) => {
-    if (!editable || task.fixedToHuman) return;
+    if (!editable || slidersLocked || task.fixedToHuman) return;
     const val = parseInt(e.target.value);
     const assignedTo = val > 5 ? "Robot" : "Human";
     updateTaskRole(task.id, assignedTo, val);
@@ -53,7 +53,7 @@ function SortableTask({ task, updateTaskRole, editable, isLastTask }) {
             step="1"
             value={getSliderValue()}
             onChange={handleChange}
-            disabled={!editable || task.fixedToHuman || isLastTask}
+            disabled={!editable || slidersLocked || task.fixedToHuman || isLastTask}
           />
           <label>robot</label>
           <span style={{ marginLeft: "0.2vw" }}>{getSliderValue()}</span>
@@ -63,7 +63,7 @@ function SortableTask({ task, updateTaskRole, editable, isLastTask }) {
   );
 }
 
-function SortableDependencyGroup({ group, tasks, updateTaskRole, editable, groupNames, isLastTask }) {
+function SortableDependencyGroup({ group, tasks, updateTaskRole, editable, groupNames, isLastTask, slidersLocked }) {
   const {
     attributes,
     listeners,
@@ -71,7 +71,7 @@ function SortableDependencyGroup({ group, tasks, updateTaskRole, editable, group
     transform,
     transition,
     isDragging,
-  } = useSortable({ 
+  } = useSortable({
     id: `group-${group.join('-')}`,
     disabled: isLastTask // Disable dragging for the last task
   });
@@ -108,6 +108,7 @@ function SortableDependencyGroup({ group, tasks, updateTaskRole, editable, group
             updateTaskRole={updateTaskRole}
             editable={editable}
             isLastTask={isLastTask}
+            slidersLocked={slidersLocked}
           />
         ))}
       </div>
@@ -115,7 +116,7 @@ function SortableDependencyGroup({ group, tasks, updateTaskRole, editable, group
   );
 }
 
-function SortableIndependentTask({ task, updateTaskRole, editable, groupNames, isLastTask }) {
+function SortableIndependentTask({ task, updateTaskRole, editable, groupNames, isLastTask, slidersLocked }) {
   const {
     attributes,
     listeners,
@@ -123,7 +124,7 @@ function SortableIndependentTask({ task, updateTaskRole, editable, groupNames, i
     transform,
     transition,
     isDragging,
-  } = useSortable({ 
+  } = useSortable({
     id: `task-${task.id}`,
     disabled: isLastTask // Disable dragging for the last task
   });
@@ -155,13 +156,14 @@ function SortableIndependentTask({ task, updateTaskRole, editable, groupNames, i
           updateTaskRole={updateTaskRole}
           editable={editable}
           isLastTask={isLastTask}
+          slidersLocked={slidersLocked}
         />
       </div>
     </div>
   );
 }
 
-function TaskSequenceView({ tasks, setTasks, updateTaskRole, editable, robotStarted, onOrderChange, savedBlockOrder }) {
+function TaskSequenceView({ tasks, setTasks, updateTaskRole, editable, robotStarted, onOrderChange, savedBlockOrder, slidersLocked }) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -398,66 +400,66 @@ function TaskSequenceView({ tasks, setTasks, updateTaskRole, editable, robotStar
   const handleDragEnd = (event) => {
     // Prevent dragging when robot has started
     if (!editable) return;
-    
+
     // Allow dragging even when not in applied mode, but show a warning
     const { active, over } = event;
     if (!over) return;
-    
+
     // Handle complex dependency mode
     // Find old and new indices in the unified list
     let oldIndex = -1;
     let newIndex = -1;
-    
+
     // Find the dragged item
     for (let i = 0; i < allSortableItems.length; i++) {
       const item = allSortableItems[i];
       let itemId;
-      
+
       if (item.type === 'group') {
         itemId = `group-${item.tasks.map(t => t.name).join('-')}`;
       } else {
         itemId = `task-${item.tasks[0].id}`;
       }
-      
+
       if (itemId === active.id) {
         oldIndex = i;
       }
-      
+
       if (itemId === over.id) {
         newIndex = i;
       }
     }
-    
+
     // Prevent reordering if the last task (Inspection) is being moved
     if (oldIndex === allSortableItems.length - 1) {
       console.log('❌ Cannot reorder the Inspection task - it must remain at the end');
       return;
     }
-    
+
     // Prevent moving any task to the last position (where Inspection should be)
     if (newIndex === allSortableItems.length - 1) {
       console.log('❌ Cannot move task to the last position - Inspection task must remain at the end');
       return;
     }
-    
+
     if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
       const reorderedItems = arrayMove(allSortableItems, oldIndex, newIndex);
       setAllSortableItems(reorderedItems);
-      
+
       // Create new task order based on the reordered blocks
       const newTasksOrder = [];
-      
+
       reorderedItems.forEach(item => {
         // Add all tasks from this block in their original order within the block
         item.tasks.forEach(task => {
           newTasksOrder.push(task);
         });
       });
-      
+
       // Update the main tasks array with the new order
       // This will trigger a re-render of the GraphicalTaskFlow component
       setTasks(newTasksOrder);
-      
+
       // Notify parent component of order change with block information
       if (onOrderChange) {
         // Create block order information
@@ -479,10 +481,10 @@ function TaskSequenceView({ tasks, setTasks, updateTaskRole, editable, robotStar
             };
           }
         });
-        
+
         onOrderChange(newTasksOrder, blockOrder);
       }
-      
+
       // Debug: Log the reordering
       console.log('Tasks reordered:', newTasksOrder.map(t => t.name));
       console.log('Block order:', reorderedItems.map(item => {
@@ -512,13 +514,13 @@ function TaskSequenceView({ tasks, setTasks, updateTaskRole, editable, robotStar
         {/* <strong>0 = Human ———— 10 = Robot</strong> */}
       </div>
       {editable && (
-        <div style={{ 
-          fontSize: "0.7vw", 
-          color: "#666", 
+        <div style={{
+          fontSize: "0.7vw",
+          color: "#666",
           marginBottom: "0.3vw",
           fontStyle: "italic"
         }}>
-          ⋮⋮ Drag and drop to reorder (Inspection task is fixed at the end)
+          Allocate tasks to human or robot using the sliders below
         </div>
       )}
       {!editable && robotStarted && (
@@ -538,7 +540,7 @@ function TaskSequenceView({ tasks, setTasks, updateTaskRole, editable, robotStar
           marginBottom: "0.3vw",
           fontStyle: "italic"
         }}>
-          Click 'Apply' to enable reordering
+          Click 'Apply' to continue
         </div>
       )}
       <DndContext
@@ -563,6 +565,7 @@ function TaskSequenceView({ tasks, setTasks, updateTaskRole, editable, robotStar
                   editable={editable}
                   groupNames={groupNames}
                   isLastTask={isLastTask}
+                  slidersLocked={slidersLocked}
                 />
               );
             } else {
@@ -574,6 +577,7 @@ function TaskSequenceView({ tasks, setTasks, updateTaskRole, editable, robotStar
                   editable={editable}
                   groupNames={groupNames}
                   isLastTask={isLastTask}
+                  slidersLocked={slidersLocked}
                 />
               );
             }

@@ -89,23 +89,33 @@
 }
 
 .robot-controls button {
-  padding: 1vw 2vw; 
-  font-size: 1.2vw;    
-  font-weight: bold;
-  margin: 0;
-  border: none;
-  border-radius: 0.4vw; 
+  font-size: 0.80em;
+  padding: 4px 12px;
+  min-width: 90px;
+  height: 32px;
+  border-radius: 4px;
+  margin-right: 6px;
   background-color: #1976d2;
   color: white;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-  min-width: 10vw;
+  border: none;
+  font-weight: 500;
+  transition: background 0.2s, color 0.2s;
 }
 
-.robot-controls button:hover {
-  background-color: #115293;
+.robot-controls button:last-child {
+  margin-right: 0;
 }
 
+.robot-controls button.initializing {
+  background-color: #007bff;
+  color: #fff;
+}
+
+.robot-controls button:disabled,
+.robot-controls button.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .task-item {
   background: #fff;
