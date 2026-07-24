@@ -770,7 +770,7 @@ function App() {
           console.log("✅ Execution started:", res.data);
         })
         .catch((err) => {
-          console.error("❌ Failed to start execution:", err);
+          console.error("❌ Failed to start execution: ", err);
         });
       
       // Send tasks to backend to start execution
