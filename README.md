@@ -1,10 +1,11 @@
-# Supplementary Sources for the Master's Thesis
+# Supplementary Materials for the Master's Thesis
 
 ## Description
-This repository contains additional data used in the master thesis.
-- Master Excel file with all relevant recorded data
-- To-Do Checklist for one experiment run
-- Consent form used
+The repository includes:
+
+- a compiled Excel workbook containing the processed and pseudonymized data used for the analyses;
+- the procedural checklist used to conduct each experimental session;
+- a blank version of the participant information and consent form used in the study.
 
 ### how to run the code: 
 backend: 
